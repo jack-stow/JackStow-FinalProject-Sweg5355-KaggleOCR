@@ -1,30 +1,36 @@
 import flask
 from flask import Flask, render_template, request, jsonify
-import mlDataset
 import base64
 from io import BytesIO
 from PIL import Image
+import numpy as np
+import os
+import pickle
+from tensorflow.keras.preprocessing import image
+from modelBuilder import load_model_from_pickle
+from modelTrainer import train_and_save_model
 
-app=Flask(__name__)
+app = Flask(__name__)
 
-def init():
-    print("initializing... ") 
-  
-# @app.route('/')
-# def index():
-#     return flask.render_template('index.html')
+MODEL_FILENAME = "trained_model.pkl"
 
-# @app.route('/predict', methods = ['POST'])
-# def predict():
-#     tagValuePairs = request.form.to_dict()
-#     print(tagValuePairs)
+# Function to load the model when the server starts
+def load_trained_model():
+    if os.path.exists(MODEL_FILENAME):
+        # If the model file exists, load it
+        model = load_model_from_pickle(MODEL_FILENAME)
+        print("Model loaded successfully")
+    else:
+        # If the model doesn't exist, train and save a new model
+        print("Model not found, training a new one...")
+        train_and_save_model()  # Train and save the model
+        model = load_model_from_pickle(MODEL_FILENAME)  # Load the newly trained model
+        print("New model trained and loaded successfully")
+    
+    return model
 
-#     return render_template('result.html', rc="hello from predict..")
-
-
-# @app.route('/')
-# def index():
-#     return render_template('drawing.html')
+# Initialize the model
+model = load_trained_model()
 
 @app.route('/')
 def home():
@@ -41,14 +47,23 @@ def submit_drawing():
     image_bytes = base64.b64decode(image_data)
     
     # Convert to an image using PIL
-    image = Image.open(BytesIO(image_bytes))
-    print(type(image))
-    # Save the image (you can customize the file path here)
-    image.save('submitted_drawing.png')
+    img = Image.open(BytesIO(image_bytes))
+    img = img.resize((64, 64))  # Ensure the image size matches the model's input
     
-    return jsonify({'message': 'Drawing submitted successfully!'})
+    # Convert image to numpy array and normalize it
+    img_array = np.array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
+    
+    # Make a prediction using the model
+    prediction = model.predict(img_array)
+    
+    # Get the predicted class
+    predicted_class = np.argmax(prediction, axis=1)[0]
+    
+    print(f"Prediction for submitted drawing: {predicted_class}")
+    
+    return jsonify({'message': f'Prediction: {predicted_class}'})
 
 
 if __name__ == '__main__':
-    init()
     app.run(debug=True, port=9090)
