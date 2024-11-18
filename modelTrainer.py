@@ -22,7 +22,7 @@ from tensorflow.keras.optimizers.schedules import ExponentialDecay
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_global_policy(policy)
 
-MODEL_FILENAME = "models/OCR_v9.h5"
+MODEL_FILENAME = "models/OCR_v10.h5"
 
 def get_exponential_decay_lr_schedule(initial_learning_rate, decay_steps, end_learning_rate):
     return tf.keras.optimizers.schedules.ExponentialDecay(
