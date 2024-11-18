@@ -8,24 +8,24 @@ import os
 import pickle
 #from tensorflow.keras.preprocessing import image
 from keras.preprocessing import image
-from modelBuilder import load_model_from_pickle
+from modelBuilder import load_model
 from modelTrainer import train_and_save_model
 
 app = Flask(__name__)
 
-MODEL_FILENAME = "trained_model.pkl"
+MODEL_FILENAME = "models/OCR_v1.h5"
 
 # Function to load the model when the server starts
 def load_trained_model():
     if os.path.exists(MODEL_FILENAME):
         # If the model file exists, load it
-        model = load_model_from_pickle(MODEL_FILENAME)
+        model = load_model(MODEL_FILENAME)
         print("Model loaded successfully")
     else:
         # If the model doesn't exist, train and save a new model
         print("Model not found, training a new one...")
         train_and_save_model()  # Train and save the model
-        model = load_model_from_pickle(MODEL_FILENAME)  # Load the newly trained model
+        model = load_model(MODEL_FILENAME)  # Load the newly trained model
         print("New model trained and loaded successfully")
     
     return model
