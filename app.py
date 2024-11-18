@@ -8,11 +8,11 @@ import os
 import pickle
 from keras.preprocessing import image
 from modelBuilder import load_model
-from modelTrainer import train_and_save_model
+from modelTrainer import train_and_save_model, MODEL_FILENAME
 
 app = Flask(__name__)
 
-MODEL_FILENAME = "models/OCR_v2.h5"
+#MODEL_FILENAME = "models/OCR_v4.h5"
 
 # Function to load the model when the server starts
 def load_trained_model():

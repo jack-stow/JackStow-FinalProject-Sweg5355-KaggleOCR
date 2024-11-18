@@ -12,52 +12,51 @@ from keras.losses import SparseCategoricalCrossentropy
 from keras.metrics import SparseCategoricalAccuracy
 from keras import mixed_precision
 from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
+from keras.preprocessing.image import ImageDataGenerator
 
+# Enable mixed-precision training for efficiency
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_global_policy(policy)
 
-MODEL_FILENAME = "models/OCR_v2.h5"
+MODEL_FILENAME = "models/OCR_v5.h5"
 
-# Function to load images from the specified directory and match them with labels from the CSV
+# Function to load images and corresponding labels
 def load_data_from_split(images_dir, labels_csv_filename, dataset_path):
-    # Prepend the dataset path to the image and CSV files
     labels_csv_path = os.path.join(dataset_path, labels_csv_filename)
     labels_df = pd.read_csv(labels_csv_path)
-    
-    # Print out column names to inspect
-    print("Columns in the CSV:", labels_df.columns)
-    
-    # Construct the full path for images
-    image_files = labels_df['FILENAME'].values
+    print("Columns in the CSV:", labels_df.columns)  # Debugging aid
     images_dir_path = os.path.join(dataset_path, images_dir)
-
+    image_files = labels_df['FILENAME'].values
     return images_dir_path, image_files, labels_df
 
-# Function to create a data generator for batches
+# Data generator for training batches
 def data_generator(images_dir, image_files, labels, batch_size=32):
-    while True:  # Loop forever so that the generator can be used by the model's fit method
-        # Load a batch of images
+    while True:
         images = next(load_images_from_directory_in_batches(images_dir, image_files, batch_size))
-        
-        # Ensure the images are NumPy arrays
         images = np.array(images)
-        
-        # Extract the corresponding labels for the batch of images
         batch_labels = labels[labels['FILENAME'].isin(image_files[:len(images)])]['IDENTITY'].values
-        
-        # Encode labels
         encoded_labels, _ = encode_labels(batch_labels)
-        
-        # Ensure labels are NumPy arrays
-        encoded_labels = np.array(encoded_labels)
-        
-        # Return images and labels as NumPy arrays
-        yield images, encoded_labels
+        yield images, np.array(encoded_labels)
+
+def custom_data_generator(images_dir, image_files, labels, batch_size=32, target_size=(224, 224)):
+    while True:
+        for start in range(0, len(image_files), batch_size):
+            end = start + batch_size
+            batch_files = image_files[start:end]
+            images = []
+            for filename in batch_files:
+                filepath = os.path.join(images_dir, filename)
+                image = tf.keras.utils.load_img(filepath, target_size=target_size)
+                image = tf.keras.utils.img_to_array(image)
+                images.append(image)
+            images = np.array(images)
+            batch_labels = labels.loc[labels['FILENAME'].isin(batch_files), 'IDENTITY']
+            encoded_labels, _ = encode_labels(batch_labels)
+            yield images, np.array(encoded_labels)
 
 
 
-
-# Enable memory growth for GPUs (if available)
+# Enable GPU memory growth
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
@@ -67,77 +66,70 @@ if gpus:
     except RuntimeError as e:
         print("Error setting memory growth:", e)
 
-# Set TensorFlow log level to display all logs
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = display all logs
-
-# Check if a pickled model exists
+# Function to train and save the model
 def train_and_save_model(batch_size=128):
     print("Dataset path:", DATASET_PATH)
-    
-    # Load and preprocess the data
-    images_dir_path, image_files, labels_df = load_data_from_split('train_v2/train/', 'written_name_train_v2.csv', DATASET_PATH)
-    validation_images_dir, validation_files, validation_labels_df = load_data_from_split('validation_v2/validation/', 'written_name_validation_v2.csv', DATASET_PATH)
-    test_images_dir, test_files, test_labels_df = load_data_from_split('test_v2/test/', 'written_name_test_v2.csv', DATASET_PATH)
-    
-    # Cache resized images for efficiency
-    cache_dir = 'resized_images/train'
-    cache_resized_images(images_dir_path, image_files, target_size=(224, 224), cache_dir=cache_dir)
-    
-    test_cache_dir = 'resized_images/test'
-    cache_resized_images(test_images_dir, test_files, target_size=(224, 224), cache_dir=test_cache_dir)
-    
-    validation_cache_dir = 'resized_images/validation'
-    cache_resized_images(validation_images_dir, validation_files, target_size=(224, 224), cache_dir=validation_cache_dir)
 
-    # Now, use the cache directory for the data generator
-    train_images_dir = cache_dir
-    validation_images_dir = validation_cache_dir
+    # Load datasets
+    train_images_dir, train_files, train_labels_df = load_data_from_split(
+        'train_v2/train/', 'written_name_train_v2.csv', DATASET_PATH)
+    validation_images_dir, validation_files, validation_labels_df = load_data_from_split(
+        'validation_v2/validation/', 'written_name_validation_v2.csv', DATASET_PATH)
+    test_images_dir, test_files, test_labels_df = load_data_from_split(
+        'test_v2/test/', 'written_name_test_v2.csv', DATASET_PATH)
 
-    # Encode labels for training (use the 'IDENTITY' column)
-    encoded_labels, label_encoder = encode_labels(labels_df['IDENTITY'])  # Correct column name
+    # Cache resized images
+    cache_resized_images(train_images_dir, train_files, target_size=(224, 224), cache_dir='resized_images/train')
+    cache_resized_images(validation_images_dir, validation_files, target_size=(224, 224), cache_dir='resized_images/validation')
+    cache_resized_images(test_images_dir, test_files, target_size=(224, 224), cache_dir='resized_images/test')
 
-    
+    # Encode labels
+    _, label_encoder = encode_labels(train_labels_df['IDENTITY'])
 
-    # Define the model
-    model = create_model((224, 224, 3), len(label_encoder.classes_))  # Example image shape (224, 224, 3)
+    # Create custom data generators
+    train_generator = custom_data_generator(
+        train_images_dir, train_files, train_labels_df, batch_size=batch_size, target_size=(224, 224)
+    )
+    validation_generator = custom_data_generator(
+        validation_images_dir, validation_files, validation_labels_df, batch_size=batch_size, target_size=(224, 224)
+    )
 
-    # **Compile the model before training**
-    # model.compile(
-    #     optimizer=Adam(),  # Adam optimizer
-    #     loss=SparseCategoricalCrossentropy(from_logits=False),  # For multi-class classification
-    #     metrics=[SparseCategoricalAccuracy()]  # Accuracy as a metric
-    # )
-    
-    # Adjust learning rate
+    # Calculate steps per epoch
+    steps_per_epoch = len(train_files) // batch_size
+    validation_steps = len(validation_files) // batch_size
+
+    # Build the model
+    model = create_model((224, 224, 3), len(label_encoder.classes_))
+
     model.compile(
-        optimizer=Adam(learning_rate=0.0001),
+        optimizer=Adam(learning_rate=0.001),
         loss=SparseCategoricalCrossentropy(from_logits=False),
         metrics=[SparseCategoricalAccuracy()]
     )
-    
+
+    # Define callbacks
     checkpoint_callback = ModelCheckpoint(MODEL_FILENAME, save_best_only=True, verbose=1)
     early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
     tensorboard_callback = TensorBoard(log_dir="logs", histogram_freq=1)
-    # Train the model using the resized images from the cache
-    with tf.device('/GPU:0'):  # This block runs on the GPU if available
+
+    # Train the model
+    with tf.device('/GPU:0'):  # Use GPU if available
         model.fit(
-            data_generator(train_images_dir, image_files, labels_df, batch_size),  # Use the data generator with cached images
-            steps_per_epoch=len(image_files) // batch_size,  # Number of batches per epoch
-            validation_data=data_generator(validation_images_dir, validation_files, validation_labels_df, batch_size),
-            validation_steps=len(validation_files) // batch_size,
-            epochs=2,
+            train_generator,
+            steps_per_epoch=steps_per_epoch,
+            validation_data=validation_generator,
+            validation_steps=validation_steps,
+            epochs=20,
             verbose=2,
             callbacks=[checkpoint_callback, early_stopping, tensorboard_callback]
         )
 
-    # Save the trained model to a pickle file
     save_model(model, MODEL_FILENAME)
     print(f"Model trained and saved to {MODEL_FILENAME}")
 
 
-    
-# If the model file doesn't exist, train a new one
+# Train the model if it doesn't already exist
 if not os.path.exists(MODEL_FILENAME):
-    train_and_save_model(64)
+    train_and_save_model(16)
 else:
     print(f"Model loaded from {MODEL_FILENAME}")
