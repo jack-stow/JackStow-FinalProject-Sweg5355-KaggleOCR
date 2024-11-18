@@ -22,7 +22,7 @@ from tensorflow.keras.optimizers.schedules import ExponentialDecay
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_global_policy(policy)
 
-MODEL_FILENAME = "models/OCR_v6.h5"
+MODEL_FILENAME = "models/OCR_v9.h5"
 
 def get_exponential_decay_lr_schedule(initial_learning_rate, decay_steps, end_learning_rate):
     return tf.keras.optimizers.schedules.ExponentialDecay(
@@ -51,18 +51,26 @@ def data_generator(images_dir, image_files, labels, batch_size=32):
         encoded_labels, _ = encode_labels(batch_labels)
         yield images, np.array(encoded_labels)
 
-def custom_data_generator(images_dir, image_files, labels, batch_size=32, target_size=(224, 224)):
+def custom_data_generator_as_dataset(images_dir, image_files, labels, batch_size=32, target_size=(224, 224)):
+    """
+    Generator that yields batches of processed images from the correct directory.
+    """
     while True:
         for start in range(0, len(image_files), batch_size):
             end = start + batch_size
             batch_files = image_files[start:end]
             images = []
             for filename in batch_files:
+                # Use images from the resized_images directory
                 filepath = os.path.join(images_dir, filename)
-                image = tf.keras.utils.load_img(filepath, target_size=target_size)
-                image = tf.keras.utils.img_to_array(image)
-                images.append(image)
-            images = np.array(images)
+                try:
+                    # Ensure images are loaded with correct target size
+                    image = tf.keras.utils.load_img(filepath, target_size=target_size)
+                    image = tf.keras.utils.img_to_array(image)
+                    images.append(image)
+                except Exception as e:
+                    print(f"Error loading image {filename}: {e}")
+            images = np.array(images)  # Convert list of images to a NumPy array
             batch_labels = labels.loc[labels['FILENAME'].isin(batch_files), 'IDENTITY']
             encoded_labels, _ = encode_labels(batch_labels)
             yield images, np.array(encoded_labels)
@@ -97,11 +105,11 @@ def train_and_save_model(batch_size=32):
     # Encode labels
     _, label_encoder = encode_labels(train_labels_df['IDENTITY'])
 
-    # Create custom data generators
-    train_generator = custom_data_generator(
+    # Create datasets with prefetch optimization
+    train_dataset = custom_data_generator_as_dataset(
         train_images_dir, train_files, train_labels_df, batch_size=batch_size, target_size=(224, 224)
     )
-    validation_generator = custom_data_generator(
+    validation_dataset = custom_data_generator_as_dataset(
         validation_images_dir, validation_files, validation_labels_df, batch_size=batch_size, target_size=(224, 224)
     )
 
@@ -127,12 +135,13 @@ def train_and_save_model(batch_size=32):
     early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
     tensorboard_callback = TensorBoard(log_dir="logs", histogram_freq=1)
 
+    print("TRAINING START")
     # Train the model
     with tf.device('/GPU:0'):  # Use GPU if available
         model.fit(
-            train_generator,
+            train_dataset,
             steps_per_epoch=steps_per_epoch,
-            validation_data=validation_generator,
+            validation_data=validation_dataset,
             validation_steps=validation_steps,
             epochs=20,
             verbose=2,
@@ -145,6 +154,7 @@ def train_and_save_model(batch_size=32):
 
 # Train the model if it doesn't already exist
 if not os.path.exists(MODEL_FILENAME):
-    train_and_save_model(16)
+    train_and_save_model(8)
 else:
     print(f"Model loaded from {MODEL_FILENAME}")
+
