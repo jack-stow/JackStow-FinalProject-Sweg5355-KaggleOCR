@@ -12,7 +12,7 @@ from modelTrainer import train_and_save_model
 
 app = Flask(__name__)
 
-MODEL_FILENAME = "models/OCR_v1.h5"
+MODEL_FILENAME = "models/OCR_v2.h5"
 
 # Function to load the model when the server starts
 def load_trained_model():
@@ -23,7 +23,7 @@ def load_trained_model():
     else:
         # If the model doesn't exist, train and save a new model
         print("Model not found, training a new one...")
-        train_and_save_model()  # Train and save the model
+        train_and_save_model(128)  # Train and save the model
         model = load_model(MODEL_FILENAME)  # Load the newly trained model
         print("New model trained and loaded successfully")
     

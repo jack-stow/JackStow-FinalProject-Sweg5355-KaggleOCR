@@ -11,12 +11,12 @@ from keras.optimizers import Adam
 from keras.losses import SparseCategoricalCrossentropy
 from keras.metrics import SparseCategoricalAccuracy
 from keras import mixed_precision
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
 
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_global_policy(policy)
 
-MODEL_FILENAME = "models/OCR_v1.h5"
+MODEL_FILENAME = "models/OCR_v2.h5"
 
 # Function to load images from the specified directory and match them with labels from the CSV
 def load_data_from_split(images_dir, labels_csv_filename, dataset_path):
@@ -71,7 +71,7 @@ if gpus:
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = display all logs
 
 # Check if a pickled model exists
-def train_and_save_model():
+def train_and_save_model(batch_size=128):
     print("Dataset path:", DATASET_PATH)
     
     # Load and preprocess the data
@@ -96,26 +96,38 @@ def train_and_save_model():
     # Encode labels for training (use the 'IDENTITY' column)
     encoded_labels, label_encoder = encode_labels(labels_df['IDENTITY'])  # Correct column name
 
+    
+
     # Define the model
     model = create_model((224, 224, 3), len(label_encoder.classes_))  # Example image shape (224, 224, 3)
 
     # **Compile the model before training**
+    # model.compile(
+    #     optimizer=Adam(),  # Adam optimizer
+    #     loss=SparseCategoricalCrossentropy(from_logits=False),  # For multi-class classification
+    #     metrics=[SparseCategoricalAccuracy()]  # Accuracy as a metric
+    # )
+    
+    # Adjust learning rate
     model.compile(
-        optimizer=Adam(),  # Adam optimizer
-        loss=SparseCategoricalCrossentropy(from_logits=False),  # For multi-class classification
-        metrics=[SparseCategoricalAccuracy()]  # Accuracy as a metric
+        optimizer=Adam(learning_rate=0.0001),
+        loss=SparseCategoricalCrossentropy(from_logits=False),
+        metrics=[SparseCategoricalAccuracy()]
     )
+    
     checkpoint_callback = ModelCheckpoint(MODEL_FILENAME, save_best_only=True, verbose=1)
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    tensorboard_callback = TensorBoard(log_dir="logs", histogram_freq=1)
     # Train the model using the resized images from the cache
     with tf.device('/GPU:0'):  # This block runs on the GPU if available
         model.fit(
-            data_generator(train_images_dir, image_files, labels_df),  # Use the data generator with cached images
-            steps_per_epoch=len(image_files) // 32,  # Number of batches per epoch
-            validation_data=data_generator(validation_images_dir, validation_files, validation_labels_df),
-            validation_steps=len(validation_files) // 32,
+            data_generator(train_images_dir, image_files, labels_df, batch_size),  # Use the data generator with cached images
+            steps_per_epoch=len(image_files) // batch_size,  # Number of batches per epoch
+            validation_data=data_generator(validation_images_dir, validation_files, validation_labels_df, batch_size),
+            validation_steps=len(validation_files) // batch_size,
             epochs=2,
             verbose=2,
-            callbacks=[checkpoint_callback]
+            callbacks=[checkpoint_callback, early_stopping, tensorboard_callback]
         )
 
     # Save the trained model to a pickle file
@@ -126,6 +138,6 @@ def train_and_save_model():
     
 # If the model file doesn't exist, train a new one
 if not os.path.exists(MODEL_FILENAME):
-    train_and_save_model()
+    train_and_save_model(64)
 else:
     print(f"Model loaded from {MODEL_FILENAME}")
