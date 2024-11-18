@@ -13,12 +13,25 @@ from keras.metrics import SparseCategoricalAccuracy
 from keras import mixed_precision
 from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
 from keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.optimizers.schedules import ExponentialDecay
+
+
+
 
 # Enable mixed-precision training for efficiency
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_global_policy(policy)
 
-MODEL_FILENAME = "models/OCR_v5.h5"
+MODEL_FILENAME = "models/OCR_v6.h5"
+
+def get_exponential_decay_lr_schedule(initial_learning_rate, decay_steps, end_learning_rate):
+    return tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate=initial_learning_rate,
+        decay_steps=decay_steps,
+        decay_rate=(end_learning_rate / initial_learning_rate),  # Small decay rate to approximate linearity
+        staircase=True
+    )
+
 
 # Function to load images and corresponding labels
 def load_data_from_split(images_dir, labels_csv_filename, dataset_path):
@@ -54,8 +67,6 @@ def custom_data_generator(images_dir, image_files, labels, batch_size=32, target
             encoded_labels, _ = encode_labels(batch_labels)
             yield images, np.array(encoded_labels)
 
-
-
 # Enable GPU memory growth
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
@@ -67,7 +78,7 @@ if gpus:
         print("Error setting memory growth:", e)
 
 # Function to train and save the model
-def train_and_save_model(batch_size=128):
+def train_and_save_model(batch_size=32):
     print("Dataset path:", DATASET_PATH)
 
     # Load datasets
@@ -101,8 +112,12 @@ def train_and_save_model(batch_size=128):
     # Build the model
     model = create_model((224, 224, 3), len(label_encoder.classes_))
 
+    # Set up the learning rate schedule
+    lr_schedule = get_exponential_decay_lr_schedule(initial_learning_rate=0.01, decay_steps=100000, end_learning_rate=0.0001)
+
+    # Compile the model with the linear decay learning rate
     model.compile(
-        optimizer=Adam(learning_rate=0.001),
+        optimizer=Adam(learning_rate=lr_schedule),
         loss=SparseCategoricalCrossentropy(from_logits=False),
         metrics=[SparseCategoricalAccuracy()]
     )
