@@ -6,7 +6,6 @@ from PIL import Image
 import numpy as np
 import os
 import pickle
-#from tensorflow.keras.preprocessing import image
 from keras.preprocessing import image
 from modelBuilder import load_model
 from modelTrainer import train_and_save_model

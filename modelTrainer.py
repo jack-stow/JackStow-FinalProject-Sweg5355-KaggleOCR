@@ -10,6 +10,11 @@ import numpy as np
 from keras.optimizers import Adam
 from keras.losses import SparseCategoricalCrossentropy
 from keras.metrics import SparseCategoricalAccuracy
+from keras import mixed_precision
+from keras.callbacks import ModelCheckpoint
+
+policy = mixed_precision.Policy('mixed_float16')
+mixed_precision.set_global_policy(policy)
 
 MODEL_FILENAME = "models/OCR_v1.h5"
 
@@ -100,7 +105,7 @@ def train_and_save_model():
         loss=SparseCategoricalCrossentropy(from_logits=False),  # For multi-class classification
         metrics=[SparseCategoricalAccuracy()]  # Accuracy as a metric
     )
-
+    checkpoint_callback = ModelCheckpoint(MODEL_FILENAME, save_best_only=True, verbose=1)
     # Train the model using the resized images from the cache
     with tf.device('/GPU:0'):  # This block runs on the GPU if available
         model.fit(
@@ -109,7 +114,8 @@ def train_and_save_model():
             validation_data=data_generator(validation_images_dir, validation_files, validation_labels_df),
             validation_steps=len(validation_files) // 32,
             epochs=2,
-            verbose=2
+            verbose=2,
+            callbacks=[checkpoint_callback]
         )
 
     # Save the trained model to a pickle file

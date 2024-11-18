@@ -1,12 +1,13 @@
 import pickle
-from keras.models import Sequential
+from keras.models import Sequential, load_model as keras_load_model
 from keras.layers import Conv2D, Flatten, Dense, Dropout
 
 def save_model(model, filename):
     model.save(filename)
 
 def load_model(filename):
-    model = load_model(filename)
+    model = keras_load_model(filename)
+    return model
 
 def create_model(input_shape, num_classes):
     model = Sequential()

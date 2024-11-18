@@ -1,4 +1,6 @@
+models/
 resized_images/
+resized_images-old/
 __pycache__/
 .trunk/
 tfgpu/

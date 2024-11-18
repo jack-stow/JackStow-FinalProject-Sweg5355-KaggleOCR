@@ -3,7 +3,7 @@ from PIL import Image
 import numpy as np
 import tensorflow as tf
 
-def load_images_from_directory_in_batches(images_dir, image_files, batch_size=32, target_size=(224, 224)):
+def load_images_from_directory_in_batches(images_dir, image_files, batch_size=256, target_size=(224, 224)):
     """Load images from a directory in batches, resizing on the fly."""
     total_images = len(image_files)
     
