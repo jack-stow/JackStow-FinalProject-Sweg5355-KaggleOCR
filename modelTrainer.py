@@ -15,14 +15,14 @@ from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
 from keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.optimizers.schedules import ExponentialDecay
 
-
+TARGET_SIZE = (388, 72)
 
 
 # Enable mixed-precision training for efficiency
-policy = mixed_precision.Policy('mixed_float16')
-mixed_precision.set_global_policy(policy)
+#policy = mixed_precision.Policy('mixed_float16')
+#mixed_precision.set_global_policy(policy)
 
-MODEL_FILENAME = "models/OCR_v10.h5"
+MODEL_FILENAME = "models/OCR_v11.h5"
 
 def get_exponential_decay_lr_schedule(initial_learning_rate, decay_steps, end_learning_rate):
     return tf.keras.optimizers.schedules.ExponentialDecay(
@@ -37,7 +37,10 @@ def get_exponential_decay_lr_schedule(initial_learning_rate, decay_steps, end_le
 def load_data_from_split(images_dir, labels_csv_filename, dataset_path):
     labels_csv_path = os.path.join(dataset_path, labels_csv_filename)
     labels_df = pd.read_csv(labels_csv_path)
-    print("Columns in the CSV:", labels_df.columns)  # Debugging aid
+    
+    # Filter out "UNREADABLE" labels
+    labels_df = labels_df[labels_df['IDENTITY'] != 'UNREADABLE']
+    
     images_dir_path = os.path.join(dataset_path, images_dir)
     image_files = labels_df['FILENAME'].values
     return images_dir_path, image_files, labels_df
@@ -51,7 +54,7 @@ def data_generator(images_dir, image_files, labels, batch_size=32):
         encoded_labels, _ = encode_labels(batch_labels)
         yield images, np.array(encoded_labels)
 
-def custom_data_generator_as_dataset(images_dir, image_files, labels, batch_size=32, target_size=(224, 224)):
+def custom_data_generator_as_dataset(images_dir, image_files, labels, batch_size=32, target_size=TARGET_SIZE):
     """
     Generator that yields batches of processed images from the correct directory.
     """
@@ -98,19 +101,19 @@ def train_and_save_model(batch_size=32):
         'test_v2/test/', 'written_name_test_v2.csv', DATASET_PATH)
 
     # Cache resized images
-    cache_resized_images(train_images_dir, train_files, target_size=(224, 224), cache_dir='resized_images/train')
-    cache_resized_images(validation_images_dir, validation_files, target_size=(224, 224), cache_dir='resized_images/validation')
-    cache_resized_images(test_images_dir, test_files, target_size=(224, 224), cache_dir='resized_images/test')
+    cache_resized_images(train_images_dir, train_files, target_size=TARGET_SIZE, cache_dir='resized_images/train')
+    cache_resized_images(validation_images_dir, validation_files, target_size=TARGET_SIZE, cache_dir='resized_images/validation')
+    cache_resized_images(test_images_dir, test_files, target_size=TARGET_SIZE, cache_dir='resized_images/test')
 
     # Encode labels
     _, label_encoder = encode_labels(train_labels_df['IDENTITY'])
 
     # Create datasets with prefetch optimization
     train_dataset = custom_data_generator_as_dataset(
-        train_images_dir, train_files, train_labels_df, batch_size=batch_size, target_size=(224, 224)
+        train_images_dir, train_files, train_labels_df, batch_size=batch_size, target_size=TARGET_SIZE
     )
     validation_dataset = custom_data_generator_as_dataset(
-        validation_images_dir, validation_files, validation_labels_df, batch_size=batch_size, target_size=(224, 224)
+        validation_images_dir, validation_files, validation_labels_df, batch_size=batch_size, target_size=TARGET_SIZE
     )
 
     # Calculate steps per epoch
@@ -118,7 +121,7 @@ def train_and_save_model(batch_size=32):
     validation_steps = len(validation_files) // batch_size
 
     # Build the model
-    model = create_model((224, 224, 3), len(label_encoder.classes_))
+    model = create_model((388, 72, 1), len(label_encoder.classes_))
 
     # Set up the learning rate schedule
     lr_schedule = get_exponential_decay_lr_schedule(initial_learning_rate=0.01, decay_steps=100000, end_learning_rate=0.0001)
