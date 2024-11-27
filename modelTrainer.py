@@ -1,163 +1,154 @@
 import os
 import pandas as pd
-import tensorflow as tf
-from dataLoader import load_images_from_directory_in_batches, cache_resized_images
-from modelBuilder import create_model, save_model
-from labelEncoder import encode_labels
-import pickle
-from mlDataset import path as DATASET_PATH
 import numpy as np
-from keras.optimizers import Adam
-from keras.losses import SparseCategoricalCrossentropy
-from keras.metrics import SparseCategoricalAccuracy
-from keras import mixed_precision
-from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
+import cv2
+from sklearn.model_selection import train_test_split
 from keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.optimizers.schedules import ExponentialDecay
+from keras.models import Sequential, load_model as keras_load_model
+from keras.layers import Conv2D, Flatten, Dense, Dropout, BatchNormalization, MaxPooling2D
+from keras.optimizers import Adam
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, LearningRateScheduler
+from modelBuilder import create_model
 
-TARGET_SIZE = (388, 72)
-
-
-# Enable mixed-precision training for efficiency
-#policy = mixed_precision.Policy('mixed_float16')
-#mixed_precision.set_global_policy(policy)
-
-MODEL_FILENAME = "models/OCR_v11.h5"
-
-def get_exponential_decay_lr_schedule(initial_learning_rate, decay_steps, end_learning_rate):
-    return tf.keras.optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=initial_learning_rate,
-        decay_steps=decay_steps,
-        decay_rate=(end_learning_rate / initial_learning_rate),  # Small decay rate to approximate linearity
-        staircase=True
-    )
-
-
-# Function to load images and corresponding labels
-def load_data_from_split(images_dir, labels_csv_filename, dataset_path):
-    labels_csv_path = os.path.join(dataset_path, labels_csv_filename)
-    labels_df = pd.read_csv(labels_csv_path)
-    
-    # Filter out "UNREADABLE" labels
-    labels_df = labels_df[labels_df['IDENTITY'] != 'UNREADABLE']
-    
-    images_dir_path = os.path.join(dataset_path, images_dir)
-    image_files = labels_df['FILENAME'].values
-    return images_dir_path, image_files, labels_df
-
-# Data generator for training batches
-def data_generator(images_dir, image_files, labels, batch_size=32):
-    while True:
-        images = next(load_images_from_directory_in_batches(images_dir, image_files, batch_size))
-        images = np.array(images)
-        batch_labels = labels[labels['FILENAME'].isin(image_files[:len(images)])]['IDENTITY'].values
-        encoded_labels, _ = encode_labels(batch_labels)
-        yield images, np.array(encoded_labels)
-
-def custom_data_generator_as_dataset(images_dir, image_files, labels, batch_size=32, target_size=TARGET_SIZE):
+def directory_to_df(path: str, numbers_only=True):
     """
-    Generator that yields batches of processed images from the correct directory.
+    Retrieve all images from targeted folder, filtering for numbers if specified.
+    
+    Arguments:
+    path: String -> the main folder directory containing image folders
+    numbers_only: Boolean -> whether to include only number classes
+    
+    Returns:
+    DataFrame: contains the images path and label corresponding to every image
     """
-    while True:
-        for start in range(0, len(image_files), batch_size):
-            end = start + batch_size
-            batch_files = image_files[start:end]
-            images = []
-            for filename in batch_files:
-                # Use images from the resized_images directory
-                filepath = os.path.join(images_dir, filename)
-                try:
-                    # Ensure images are loaded with correct target size
-                    image = tf.keras.utils.load_img(filepath, target_size=target_size)
-                    image = tf.keras.utils.img_to_array(image)
-                    images.append(image)
-                except Exception as e:
-                    print(f"Error loading image {filename}: {e}")
-            images = np.array(images)  # Convert list of images to a NumPy array
-            batch_labels = labels.loc[labels['FILENAME'].isin(batch_files), 'IDENTITY']
-            encoded_labels, _ = encode_labels(batch_labels)
-            yield images, np.array(encoded_labels)
+    df = []
+    
+    # If numbers_only, only process numeric folder names
+    valid_classes = [str(i) for i in range(10)] if numbers_only else None
+    
+    for cls in os.listdir(path):
+        # Skip if numbers_only is True and cls is not a number
+        if valid_classes and cls not in valid_classes:
+            continue
+        
+        cls_path = os.path.join(path, cls)
+        
+        # Ensure it's a directory
+        if not os.path.isdir(cls_path):
+            continue
+        
+        for img_path in os.listdir(cls_path):
+            full_img_path = os.path.join(cls_path, img_path)
+            df.append([full_img_path, cls])
+    
+    df = pd.DataFrame(df, columns=['image', 'label'])
+    print("Number of samples found:", len(df))
+    return df
 
-# Enable GPU memory growth
-gpus = tf.config.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        print("Memory growth for GPUs is enabled.")
-    except RuntimeError as e:
-        print("Error setting memory growth:", e)
-
-# Function to train and save the model
-def train_and_save_model(batch_size=32):
-    print("Dataset path:", DATASET_PATH)
-
-    # Load datasets
-    train_images_dir, train_files, train_labels_df = load_data_from_split(
-        'train_v2/train/', 'written_name_train_v2.csv', DATASET_PATH)
-    validation_images_dir, validation_files, validation_labels_df = load_data_from_split(
-        'validation_v2/validation/', 'written_name_validation_v2.csv', DATASET_PATH)
-    test_images_dir, test_files, test_labels_df = load_data_from_split(
-        'test_v2/test/', 'written_name_test_v2.csv', DATASET_PATH)
-
-    # Cache resized images
-    cache_resized_images(train_images_dir, train_files, target_size=TARGET_SIZE, cache_dir='resized_images/train')
-    cache_resized_images(validation_images_dir, validation_files, target_size=TARGET_SIZE, cache_dir='resized_images/validation')
-    cache_resized_images(test_images_dir, test_files, target_size=TARGET_SIZE, cache_dir='resized_images/test')
-
-    # Encode labels
-    _, label_encoder = encode_labels(train_labels_df['IDENTITY'])
-
-    # Create datasets with prefetch optimization
-    train_dataset = custom_data_generator_as_dataset(
-        train_images_dir, train_files, train_labels_df, batch_size=batch_size, target_size=TARGET_SIZE
+def preprocess_data(main_path='dataset', img_shape=(32, 32), test_size=0.3, val_size=0.25, random_state=41):
+    """
+    Preprocess the dataset by splitting into train, validation, and test sets.
+    
+    Arguments:
+    main_path: String -> path to the dataset
+    img_shape: Tuple -> target image shape
+    test_size: Float -> proportion of test set
+    val_size: Float -> proportion of validation set from training data
+    random_state: Int -> random seed for reproducibility
+    
+    Returns:
+    Tuple of generators and class information
+    """
+    # Read the dataset
+    df = directory_to_df(main_path)
+    
+    # Verify the data
+    print("Dataset distribution:")
+    print(df['label'].value_counts())
+    
+    # Split into train and test
+    X, y = df['image'], df['label']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
+    
+    # Split train into train and validation
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=val_size, random_state=random_state, stratify=y_train)
+    
+    # Create dataframes
+    training_df = pd.concat([X_train, y_train], axis=1)
+    validation_df = pd.concat([X_val, y_val], axis=1)
+    testing_df = pd.concat([X_test, y_test], axis=1)
+    
+    # Data augmentation for training
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,  # Normalize pixel values
+        rotation_range=10,  # Random rotation
+        width_shift_range=0.1,  # Horizontal shift
+        height_shift_range=0.1,  # Vertical shift
+        shear_range=0.1,  # Shear intensity
+        zoom_range=0.1,  # Random zoom
+        horizontal_flip=False,  # No horizontal flipping for numbers
+        fill_mode='nearest'
     )
-    validation_dataset = custom_data_generator_as_dataset(
-        validation_images_dir, validation_files, validation_labels_df, batch_size=batch_size, target_size=TARGET_SIZE
+    
+    # Validation and test data generator (only rescaling)
+    val_test_datagen = ImageDataGenerator(rescale=1./255)
+    
+    # Create generators
+    train_gen = train_datagen.flow_from_dataframe(
+        training_df, 
+        x_col='image', 
+        y_col='label', 
+        target_size=img_shape, 
+        batch_size=32, 
+        class_mode='categorical'  # Changed to categorical
     )
-
-    # Calculate steps per epoch
-    steps_per_epoch = len(train_files) // batch_size
-    validation_steps = len(validation_files) // batch_size
-
-    # Build the model
-    model = create_model((388, 72, 1), len(label_encoder.classes_))
-
-    # Set up the learning rate schedule
-    lr_schedule = get_exponential_decay_lr_schedule(initial_learning_rate=0.01, decay_steps=100000, end_learning_rate=0.0001)
-
-    # Compile the model with the linear decay learning rate
-    model.compile(
-        optimizer=Adam(learning_rate=lr_schedule),
-        loss=SparseCategoricalCrossentropy(from_logits=False),
-        metrics=[SparseCategoricalAccuracy()]
+    
+    val_gen = val_test_datagen.flow_from_dataframe(
+        validation_df, 
+        x_col='image', 
+        y_col='label', 
+        target_size=img_shape, 
+        batch_size=32, 
+        class_mode='categorical',
+        shuffle=False
     )
+    
+    test_gen = val_test_datagen.flow_from_dataframe(
+        testing_df, 
+        x_col='image', 
+        y_col='label', 
+        target_size=img_shape, 
+        batch_size=32, 
+        class_mode='categorical',
+        shuffle=False
+    )
+    
+    # Get class information
+    mapping = train_gen.class_indices
+    mapping_inverse = {v: k for k, v in mapping.items()}
+    num_classes = len(mapping_inverse)
+    
+    print("\nClass Mapping:")
+    print(mapping_inverse)
+    print("\nNumber of classes:", num_classes)
+    
+    return train_gen, val_gen, test_gen, mapping_inverse, num_classes
 
-    # Define callbacks
-    checkpoint_callback = ModelCheckpoint(MODEL_FILENAME, save_best_only=True, verbose=1)
-    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-    tensorboard_callback = TensorBoard(log_dir="logs", histogram_freq=1)
-
-    print("TRAINING START")
-    # Train the model
-    with tf.device('/GPU:0'):  # Use GPU if available
-        model.fit(
-            train_dataset,
-            steps_per_epoch=steps_per_epoch,
-            validation_data=validation_dataset,
-            validation_steps=validation_steps,
-            epochs=20,
-            verbose=2,
-            callbacks=[checkpoint_callback, early_stopping, tensorboard_callback]
-        )
-
-    save_model(model, MODEL_FILENAME)
-    print(f"Model trained and saved to {MODEL_FILENAME}")
+# Usage
+train_gen, val_gen, test_gen, mapping, num_classes = preprocess_data()
 
 
-# Train the model if it doesn't already exist
-if not os.path.exists(MODEL_FILENAME):
-    train_and_save_model(8)
-else:
-    print(f"Model loaded from {MODEL_FILENAME}")
+def train_model():
+    # Create and train the model
+    model = create_model((32, 32, 3), num_classes)
 
+    # Modify fit parameters
+    history = model.fit(
+        train_gen, 
+        epochs=50,  # Increased epochs
+        validation_data=val_gen,
+        callbacks=[
+            EarlyStopping(patience=10, restore_best_weights=True),
+            ModelCheckpoint('best_number_model.h5', save_best_only=True)
+        ]
+    )

@@ -6,3 +6,10 @@ __pycache__/
 .trunk/
 tfgpu/
 __pycache__/modelTrainer.cpython-311.pyc
+kaggle/
+input2/
+desperation/*
+dataset/*
+dataset/
+input/*
+input2/*

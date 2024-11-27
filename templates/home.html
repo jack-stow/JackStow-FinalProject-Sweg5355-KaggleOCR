@@ -16,11 +16,14 @@
     </style>
 </head>
 <body>
-    <div class="container mt-5">
+    <div class="container mt-1">
+        <canvas id="canvas" width="500" height="500"></canvas>
+    </div>
+    <div class="container mt-3">
         <h1>Welcome, {{ user_name }}</h1>
         
         <!-- Canvas -->
-        <canvas id="canvas" width="500" height="300"></canvas>
+        
         
         <div class="row">
             <div class="col">
@@ -42,78 +45,84 @@
     
     <script>
         // Get canvas element and context
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
 
-        let drawing = false;  // Track if the user is currently drawing
-        let lastX = 0;        // Last X coordinate for drawing
-        let lastY = 0;        // Last Y coordinate for drawing
+// Set canvas background color to white when page loads
+ctx.fillStyle = '#FFFFFF';  // White color
+ctx.fillRect(0, 0, canvas.width, canvas.height);  // Fill the entire canvas with white
 
-        // Function to start drawing
-        function startDrawing(e) {
-            drawing = true;
-            lastX = e.offsetX;
-            lastY = e.offsetY;
-        }
+// Set stroke style to make the brush smooth
+ctx.lineJoin = 'round';  // Smooth join where lines meet
+ctx.lineCap = 'round';   // Smooth ends of the lines
 
-        // Function to stop drawing
-        function stopDrawing() {
-            drawing = false;
-        }
+// Function to start drawing
+function startDrawing(e) {
+    drawing = true;
+    lastX = e.offsetX;
+    lastY = e.offsetY;
+}
 
-        // Function to draw on the canvas
-        function draw(e) {
-            if (!drawing) return;  // Only draw if mouse is down
-            
-            ctx.beginPath();
-            ctx.moveTo(lastX, lastY);
-            ctx.lineTo(e.offsetX, e.offsetY);
-            ctx.strokeStyle = '#000000';  // Black color for drawing
-            ctx.lineWidth = 5;           // Line width for the drawing
-            ctx.stroke();
-            
-            lastX = e.offsetX;
-            lastY = e.offsetY;
-        }
+// Function to stop drawing
+function stopDrawing() {
+    drawing = false;
+}
 
-        // Function to clear the canvas
-        function clearCanvas() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clears the entire canvas
-        }
+// Function to draw on the canvas
+function draw(e) {
+    if (!drawing) return;  // Only draw if mouse is down
+    
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(e.offsetX, e.offsetY);
+    ctx.strokeStyle = '#000000';  // Black color for drawing
+    ctx.lineWidth = 10;           // Thicker line width for the drawing
+    ctx.stroke();
+    
+    lastX = e.offsetX;
+    lastY = e.offsetY;
+}
 
-        // Function to submit the canvas data
-        function submitDrawing() {
-            var imageData = canvas.toDataURL('image/png'); // Convert canvas to base64 PNG image
+// Function to clear the canvas and set background to white
+function clearCanvas() {
+    ctx.fillStyle = '#FFFFFF';  // White color
+    ctx.fillRect(0, 0, canvas.width, canvas.height);  // Fill the entire canvas with white
+}
 
-            // Create a form data to send the image to the server
-            var formData = new FormData();
-            formData.append('image', imageData);  // Use 'image' as the key here
+// Function to submit the canvas data
+function submitDrawing() {
+    var imageData = canvas.toDataURL('image/png'); // Convert canvas to base64 PNG image
 
-            // Send the image to the server
-            fetch('/submit', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert('Drawing submitted successfully!');
-            })
-            .catch(error => {
-                alert('Error submitting drawing.');
-            });
-        }
+    // Create a form data to send the image to the server
+    var formData = new FormData();
+    formData.append('image', imageData);  // Use 'image' as the key here
 
-        // Attach event listeners to the canvas for drawing functionality
-        canvas.addEventListener('mousedown', startDrawing);
-        canvas.addEventListener('mousemove', draw);
-        canvas.addEventListener('mouseup', stopDrawing);
-        canvas.addEventListener('mouseout', stopDrawing);
+    // Send the image to the server
+    fetch('/submit', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        //alert('Drawing submitted successfully!');
+        alert(`prediction: ${data.prediction}. Confidence: ${data.confidence}`)
+    })
+    .catch(error => {
+        alert('Error submitting drawing.');
+    });
+}
 
-        // Attach clear function to the "Clear Canvas" button
-        document.getElementById('clear-btn').addEventListener('click', clearCanvas);
+// Attach event listeners to the canvas for drawing functionality
+canvas.addEventListener('mousedown', startDrawing);
+canvas.addEventListener('mousemove', draw);
+canvas.addEventListener('mouseup', stopDrawing);
+canvas.addEventListener('mouseout', stopDrawing);
 
-        // Attach submit function to the "Submit Drawing" button
-        document.getElementById('submit-btn').addEventListener('click', submitDrawing);
+// Attach clear function to the "Clear Canvas" button
+document.getElementById('clear-btn').addEventListener('click', clearCanvas);
+
+// Attach submit function to the "Submit Drawing" button
+document.getElementById('submit-btn').addEventListener('click', submitDrawing);
     </script>
 </body>
 </html>
