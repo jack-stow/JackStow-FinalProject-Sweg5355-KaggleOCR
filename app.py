@@ -166,7 +166,6 @@ def home():
 
 @app.route('/submit', methods=['POST'])
 def submit_drawing():
-    
     image_data = request.form['image']  # Get the image data from the POST request
 
     try:
@@ -174,33 +173,48 @@ def submit_drawing():
         processed_image = preprocess_image_for_prediction(image_data)
         
         # Make prediction
-        prediction = model.predict(processed_image) # type: ignore
-        
-        print(type(prediction))
-        
+        prediction = model.predict(processed_image)  # type: ignore
+
         # Check if prediction is a 2D array (batch of 1)
         if isinstance(prediction, np.ndarray) and prediction.ndim == 2:
             prediction = prediction[0]  # Extract the first element from the batch
 
-        # Get top n predictions
-        top_n = 3  # You can adjust this to how many predictions you want to show
-        top_indices = np.argsort(prediction)[-top_n:][::-1]  # Indices of top predictions
+        # Sort the predictions and get indices of top probabilities
+        sorted_indices = np.argsort(prediction)[::-1]  # Indices of sorted predictions in descending order
 
-        # Create list of top predictions (convert numpy.ndarray to Python native types)
-        top_predictions = [
-            {'label': mapping[int(i)], 'confidence': float(prediction[int(i)])}  # Ensure i is an int for indexing
-            for i in top_indices
-        ]
-        
-        # Get the most probable class
-        predicted_class = int(top_indices[0])  # The most probable class
+        # Initialize the cumulative sum and selected predictions
+        cumulative_confidence = 0
+        selected_predictions = []
+        max_results = 10  # Set a limit on the number of results
+        min_confidence = 0.0075  # 0.75% threshold. (do not return any results below this confidence)
+
+        # Iterate through the sorted predictions and accumulate until reaching 99% confidence or 10 results
+        for idx in sorted_indices:
+            confidence = prediction[idx]
+            
+            # Only include predictions that meet the 0.75% confidence threshold
+            if confidence < min_confidence:
+                continue
+            
+            cumulative_confidence += confidence
+            selected_predictions.append({
+                'label': mapping[int(idx)], 
+                'confidence': float(confidence)
+            })
+            
+            # Stop once cumulative confidence reaches at least 99% or we've added 10 results
+            if cumulative_confidence >= 0.99 or len(selected_predictions) >= max_results:
+                break
+
+        # Get the most probable class (first item in the selected predictions)
+        predicted_class = int(sorted_indices[0])  # The most probable class
         predicted_label = mapping[predicted_class]
-        
+
         # Prepare the response data
         response = {
             'prediction': predicted_label,
             'confidence': float(np.max(prediction)),  # Max confidence
-            'top_predictions': top_predictions  # Top predictions with their confidence
+            'top_predictions': selected_predictions  # Selected predictions with their confidence
         }
         
         # Debugging print to log the response before returning
@@ -211,6 +225,7 @@ def submit_drawing():
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 
 
