@@ -168,15 +168,7 @@ def home():
 def submit_drawing():
     
     image_data = request.form['image']  # Get the image data from the POST request
-    #preprocess_image_for_prediction
-    
-    # # Check if an image was uploaded
-    # if 'image' not in request.files:
-    #     return jsonify({'error': 'No image uploaded'}), 400
-    
-    # Get the uploaded file
-    #image_file = request.files['image']
-    
+
     try:
         # Preprocess the image
         processed_image = preprocess_image_for_prediction(image_data)
@@ -185,16 +177,37 @@ def submit_drawing():
         prediction = model.predict(processed_image) # type: ignore
         
         print(type(prediction))
-        # Get the class with highest probability
-        predicted_class = int(np.array(prediction).argmax()) #np.argmax(prediction)
         
-        # Convert to the original class label
+        # Check if prediction is a 2D array (batch of 1)
+        if isinstance(prediction, np.ndarray) and prediction.ndim == 2:
+            prediction = prediction[0]  # Extract the first element from the batch
+
+        # Get top n predictions
+        top_n = 3  # You can adjust this to how many predictions you want to show
+        top_indices = np.argsort(prediction)[-top_n:][::-1]  # Indices of top predictions
+
+        # Create list of top predictions (convert numpy.ndarray to Python native types)
+        top_predictions = [
+            {'label': mapping[int(i)], 'confidence': float(prediction[int(i)])}  # Ensure i is an int for indexing
+            for i in top_indices
+        ]
+        
+        # Get the most probable class
+        predicted_class = int(top_indices[0])  # The most probable class
         predicted_label = mapping[predicted_class]
         
-        return jsonify({
+        # Prepare the response data
+        response = {
             'prediction': predicted_label,
-            'confidence': float(np.max(prediction))
-        })
+            'confidence': float(np.max(prediction)),  # Max confidence
+            'top_predictions': top_predictions  # Top predictions with their confidence
+        }
+        
+        # Debugging print to log the response before returning
+        print("Prediction response:", response)
+        
+        # Return the response as JSON
+        return jsonify(response)
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
