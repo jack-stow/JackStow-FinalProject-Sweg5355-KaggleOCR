@@ -97,16 +97,39 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
-        // Submit the drawing
         function submitDrawing() {
-            var imageData = canvas.toDataURL('image/png'); // Convert canvas to base64 PNG image
+            // Convert base64 to Blob
+            var imageData = canvas.toDataURL('image/png');
+            
+            // Convert base64 to Blob
+            function dataURItoBlob(dataURI) {
+                // Convert base64/URLEncoded data component to raw binary data
+                var byteString;
+                if (dataURI.split(',')[0].indexOf('base64') >= 0)
+                    byteString = atob(dataURI.split(',')[1]);
+                else
+                    byteString = unescape(dataURI.split(',')[1]);
+
+                // Separate out the mime component
+                var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+                // Write the bytes of the string to an ArrayBuffer
+                var ab = new ArrayBuffer(byteString.length);
+                var ia = new Uint8Array(ab);
+                for (var i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+
+                // Create a blob with the ArrayBuffer and MIME type
+                return new Blob([ab], {type: mimeString});
+            }
 
             // Create a form data to send the image to the server
             var formData = new FormData();
-            formData.append('image', imageData);
+            formData.append('image', dataURItoBlob(imageData), 'drawing.png');
 
             // Send the image to the server
-            fetch('/submit', {
+            fetch('/predictions', {
                 method: 'POST',
                 body: formData
             })
