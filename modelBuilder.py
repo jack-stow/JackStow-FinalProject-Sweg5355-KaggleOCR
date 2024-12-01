@@ -12,7 +12,7 @@ def load_model(filename):
 
 
 # Modify your model creation and compilation
-def create_model(input_shape, num_classes):
+def create_model(input_shape, num_classes, learning_rate=0.0001):
     model = Sequential([
         # First Convolutional Block
         Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=input_shape),
@@ -42,7 +42,7 @@ def create_model(input_shape, num_classes):
     
     # Compile the model
     model.compile(
-        optimizer=Adam(learning_rate=0.0001),
+        optimizer=Adam(learning_rate=learning_rate),
         loss='categorical_crossentropy',  # Changed to categorical_crossentropy
         metrics=['accuracy']
     )

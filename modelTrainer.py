@@ -4,11 +4,17 @@ import numpy as np
 import cv2
 from sklearn.model_selection import train_test_split
 from keras.preprocessing.image import ImageDataGenerator
-from keras.models import Sequential, load_model as keras_load_model
+from keras.models import Sequential, load_model as keras_load_model, Model as KerasModel
 from keras.layers import Conv2D, Flatten, Dense, Dropout, BatchNormalization, MaxPooling2D
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, LearningRateScheduler
 from modelBuilder import create_model
+from typing import Union  # For Python < 3.10
+import tensorflow as tf
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
 
 def directory_to_df(path: str, numbers_only=True):
     """
@@ -60,7 +66,7 @@ def preprocess_data(main_path='dataset', img_shape=(32, 32), test_size=0.3, val_
     Tuple of generators and class information
     """
     # Read the dataset
-    df = directory_to_df(main_path)
+    df = directory_to_df(main_path, False)
     
     # Verify the data
     print("Dataset distribution:")
@@ -135,20 +141,35 @@ def preprocess_data(main_path='dataset', img_shape=(32, 32), test_size=0.3, val_
     return train_gen, val_gen, test_gen, mapping_inverse, num_classes
 
 # Usage
-train_gen, val_gen, test_gen, mapping, num_classes = preprocess_data()
+train_gen, val_gen, test_gen, mapping, num_classes = preprocess_data('dataset')
 
 
-def train_model():
-    # Create and train the model
-    model = create_model((32, 32, 3), num_classes)
+def train_model(file_name: Union[str, None] = None):
+    model: KerasModel  # Explicit type annotation for Pylance
+    
+    if file_name is not None and os.path.exists(file_name):
+        #import the model
+        model = keras_load_model(file_name) # type: ignore
+    else:
+        # Create the model
+        model = create_model((32, 32, 3), num_classes, learning_rate=0.001)
+
 
     # Modify fit parameters
     history = model.fit(
         train_gen, 
-        epochs=50,  # Increased epochs
+        epochs=100,  # Increased epochs
         validation_data=val_gen,
         callbacks=[
+            # Each epoch, if the current model iteration is the best so far, save it. otherwise, don't bother.
+            ModelCheckpoint(file_name, save_best_only=True),
+            # if 10 epochs pass without improvement, give up.
             EarlyStopping(patience=10, restore_best_weights=True),
-            ModelCheckpoint('best_number_model.h5', save_best_only=True)
+            # Reduce learning rate when a plateau is reached.
+            ReduceLROnPlateau(monitor='val_loss', factor=0.75, patience=2, min_lr=1e-7)
         ]
     )
+    
+    
+if __name__ == '__main__':
+    train_model(file_name='models/neo_character_model_v3.h5')

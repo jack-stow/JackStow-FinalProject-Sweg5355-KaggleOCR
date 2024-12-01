@@ -13,3 +13,12 @@ dataset/*
 dataset/
 input/*
 input2/*
+dataset-old/*
+Maybe-Data/*
+Maybe-Data/
+tfgpu.7z
+move-test.bat
+move-data.bat
+move-data-alphabet.bat
+dataset-old - Copy/
+dataset-old - Copy/*

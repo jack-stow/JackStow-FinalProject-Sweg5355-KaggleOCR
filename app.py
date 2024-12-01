@@ -1,5 +1,6 @@
 import flask
 from flask import Flask, render_template, request, jsonify
+import json
 import base64
 from io import BytesIO
 from PIL import Image
@@ -8,7 +9,7 @@ import os
 import pickle
 from keras.preprocessing import image
 from keras.models import load_model as keras_load_model
-from modelTrainer import mapping
+#from modelTrainer import mapping
 #from prototyping2 import mapping as mapping_inverse
 #from modelBuilder import load_model
 #from modelTrainer import train_and_save_model, MODEL_FILENAME
@@ -137,7 +138,7 @@ def preprocess_image(image_path_or_bytes):
 
 app = Flask(__name__)
 
-MODEL_FILENAME = "models/best_number_model.h5"
+MODEL_FILENAME = "neo_character_model_v3.h5"
 
 # Function to load the model when the server starts
 def load_trained_model():
@@ -152,6 +153,12 @@ def load_trained_model():
 
 # Initialize the model
 model = load_trained_model()
+# with open('ocr_mapping.json', 'r') as f:
+#     mapping = json.load(f)
+
+with open('neo_character_model_mapping.json', 'r') as f:
+    mapping_json = json.load(f)
+    mapping = {int(key): value for key, value in mapping_json.items()}
 
 @app.route('/')
 def home():
