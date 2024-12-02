@@ -23,3 +23,9 @@ move-data-alphabet.bat
 dataset-old - Copy/
 dataset-old - Copy/*
 restTester.py
+checkpoints/
+checkpoints/*
+dataset-backup/
+dataset-backup/*
+bad_data/
+bad_data/*

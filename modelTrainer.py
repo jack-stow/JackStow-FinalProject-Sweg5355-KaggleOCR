@@ -11,7 +11,7 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, L
 from modelBuilder import create_model
 from typing import Union  # For Python < 3.10
 import tensorflow as tf
-
+tf.keras.mixed_precision.set_global_policy('mixed_float16')
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
@@ -105,7 +105,7 @@ def preprocess_data(main_path='dataset', img_shape=(32, 32), test_size=0.3, val_
         x_col='image', 
         y_col='label', 
         target_size=img_shape, 
-        batch_size=32, 
+        batch_size=128, 
         class_mode='categorical'  # Changed to categorical
     )
     
@@ -114,7 +114,7 @@ def preprocess_data(main_path='dataset', img_shape=(32, 32), test_size=0.3, val_
         x_col='image', 
         y_col='label', 
         target_size=img_shape, 
-        batch_size=32, 
+        batch_size=128, 
         class_mode='categorical',
         shuffle=False
     )
@@ -124,7 +124,7 @@ def preprocess_data(main_path='dataset', img_shape=(32, 32), test_size=0.3, val_
         x_col='image', 
         y_col='label', 
         target_size=img_shape, 
-        batch_size=32, 
+        batch_size=128, 
         class_mode='categorical',
         shuffle=False
     )
@@ -172,4 +172,4 @@ def train_model(file_name: Union[str, None] = None):
     
     
 if __name__ == '__main__':
-    train_model(file_name='models/neo_character_model_v3.h5')
+    train_model(file_name='models/neo_character_model_v5.h5')

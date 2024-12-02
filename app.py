@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 import json
 import base64
-from io import BytesIO
+import io
 from PIL import Image, ImageOps
 import numpy as np
 import cv2
@@ -11,14 +11,9 @@ import os
 import pickle
 from keras.preprocessing import image
 from keras.models import load_model as keras_load_model
-#from modelTrainer import mapping
-#from prototyping2 import mapping as mapping_inverse
-#from modelBuilder import load_model
-#from modelTrainer import train_and_save_model, MODEL_FILENAME
-#from test2 import load_model#, MODEL_FILENAME
-#from EMNIST_test import MODEL_FILENAME
 import keras_ocr
 import tensorflow as tf
+from PIL import Image, ImageOps
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for gpu in gpus:
@@ -32,15 +27,6 @@ def load_model(filename):
     return model
 
 
-import base64
-import io
-from PIL import Image
-import numpy as np
-
-import base64
-import io
-import numpy as np
-from PIL import Image, ImageOps
 
 def preprocess_image_for_prediction(image_file, target_size=(32, 32)):
     try:
@@ -190,7 +176,7 @@ def validate_image(file):
 
 app = Flask(__name__)
 
-MODEL_FILENAME = "neo_character_model_v3.h5"
+MODEL_FILENAME = "models/neo_character_model_v5.h5"
 
 # Function to load the model when the server starts
 def load_trained_model():
